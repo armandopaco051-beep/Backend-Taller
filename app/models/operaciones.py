@@ -21,6 +21,7 @@ class Incidente(Base):
 
     historial = relationship("HistorialEstado", back_populates="incidente")
     asignaciones = relationship("Asignacion", back_populates="incidente")
+    evidencias = relationship("Evidencia", back_populates="incidente")
 
 
 class HistorialEstado(Base):
@@ -44,8 +45,10 @@ class Asignacion(Base):
     tiempo = Column(String(50), nullable=False)
     observacion = Column(Text, nullable=True)
     id_incidente = Column(Integer, ForeignKey("operaciones.incidente.codigo", onupdate="CASCADE", ondelete="CASCADE"), nullable=False)
-    id_tecnico = Column(Integer, ForeignKey("talleres.tecnico.codigo", onupdate="CASCADE", ondelete="CASCADE"), nullable=False)
+    id_tecnico = Column(String(100), ForeignKey("talleres.tecnico.codigo", onupdate="CASCADE", ondelete="CASCADE"), nullable=False)
     id_taller = Column(Integer, ForeignKey("talleres.taller.codigo", onupdate="CASCADE", ondelete="CASCADE"), nullable=False)
     id_estado_asignacion = Column(Integer, ForeignKey("catalogo.estado_asignacion.id", onupdate="CASCADE", ondelete="CASCADE"), nullable=False)
 
     incidente = relationship("Incidente", back_populates="asignaciones")
+    tecnico = relationship("Tecnico", back_populates="asignaciones")
+    taller = relationship("Taller", back_populates="asignaciones")

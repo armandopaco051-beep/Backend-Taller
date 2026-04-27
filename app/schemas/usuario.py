@@ -57,13 +57,14 @@ class UsuarioUpdate(BaseModel):
     id_rol: Optional[int] = None
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    identificador : str
     password: str
 
 class Token(BaseModel): 
     access_token: str
     token_type: str
     usuario: UsuarioResponse
+    id_taller : Optional[int] = None
     
 
 class RecuperarPasswordRequest(BaseModel): 

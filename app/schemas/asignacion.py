@@ -13,3 +13,7 @@ class AsignacionCreate(BaseModel):
 class ResponderAsignacion(BaseModel):
     aceptada: bool
     observacion: str = ""
+
+class AsignarTecnicoRequest(BaseModel): 
+    codigo_tecnico : str 
+    observacion : Optional[str] = None 

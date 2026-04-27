@@ -28,6 +28,8 @@ class Taller(Base):
     usuario_id = Column(String(100), ForeignKey("seguridad.usuario.codigo", onupdate="CASCADE", ondelete="CASCADE"), nullable=False)
 
     tecnicos = relationship("Tecnico", back_populates="taller")
+    asignaciones = relationship("Asignacion", back_populates="taller")
+
 
 class Tecnico(Base):
     __tablename__ = "tecnico"
@@ -48,6 +50,7 @@ class Tecnico(Base):
     )
     id_rol = Column(Integer, nullable=False, default=3)
     taller = relationship("Taller", back_populates="tecnicos")
+    asignaciones = relationship("Asignacion", back_populates="tecnico")
 
 
     

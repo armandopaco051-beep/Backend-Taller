@@ -17,6 +17,7 @@ from app.schemas.tecnico import (
 from app.services.auth_service import hash_password, verify_password, create_access_token
 from app.config import settings
 
+
 router = APIRouter(prefix="/tecnicos", tags=["Técnicos"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
@@ -57,7 +58,7 @@ def get_taller_admin(usuario: Usuario, db: Session):
 # =========================
 
 @router.post("/login")
-def login_tecnico(datos: TecnicoLoginRequest, db: Session = Depends(get_db)):
+def login_tecnico(datos: TecnicoLoginRequest, request : Request,db: Session = Depends(get_db)):
     tecnico = db.query(Tecnico).filter(Tecnico.email == datos.email).first()
 
     if not tecnico or not verify_password(datos.password, tecnico.password):
@@ -78,6 +79,7 @@ def login_tecnico(datos: TecnicoLoginRequest, db: Session = Depends(get_db)):
     descripcion=f"Inicio de sesión del técnico {tecnico.codigo}",
     ip_address=request.client.host if request.client else None
     )
+    db.commit()
     
     return {
         "access_token": token,
@@ -315,5 +317,3 @@ def eliminar_tecnico(codigo: str, db: Session = Depends(get_db)):
     db.delete(tecnico)
     db.commit()
     return {"mensaje": "Técnico eliminado"}
-    db.commit()
-    return {"mensaje": "Técnico eliminado"} 

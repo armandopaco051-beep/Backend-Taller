@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
 from app.database import get_db
-from app.models.operaciones import Incidente
+from app.models.operaciones import Incidente , Asignacion
 from app.schemas.incidente import IncidenteCreate, IncidenteUpdate, IncidenteResponse
+from app.models.talleres import Taller
+from app.routers.asignacion import asignar_siguiente_taller
 
 router = APIRouter(prefix="/incidentes", tags=["Incidentes - CU10"])
 
@@ -13,6 +15,7 @@ router = APIRouter(prefix="/incidentes", tags=["Incidentes - CU10"])
 # CU-10 — Crear incidente (reporte de emergencia)
 @router.post("/", response_model=IncidenteResponse, status_code=201)
 def crear_incidente(datos: IncidenteCreate, db: Session = Depends(get_db)):
+    # 1. Crear el incidente
     nuevo = Incidente(
         descripcion=datos.descripcion,
         latitud=datos.latitud,
@@ -24,9 +27,26 @@ def crear_incidente(datos: IncidenteCreate, db: Session = Depends(get_db)):
         id_vehiculo=datos.id_vehiculo,
         codigo_usuario=datos.codigo_usuario,
     )
+
     db.add(nuevo)
+
+    # ✅ CAMBIO: genera el código del incidente antes del commit
+    db.flush()
+
+    # ✅ CAMBIO: envía la emergencia al taller más cercano
+    asignacion = asignar_siguiente_taller(db, nuevo)
+
+    if asignacion:
+        # ✅ Opcional: cambiar estado del incidente si tienes estado "en búsqueda/asignado"
+        nuevo.id_estado_incidente = 2
+    else:
+        # ✅ Opcional: si no hay talleres disponibles
+        # nuevo.id_estado_incidente = 1
+        pass
+
     db.commit()
     db.refresh(nuevo)
+
     return nuevo
 
 

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.functions import now
 from app.database import get_db
 from app.models.seguridad import Usuario
 from app.schemas.usuario import (
@@ -9,6 +10,7 @@ from app.schemas.usuario import (
 )
 from app.schemas.taller import TallerCreate
 from app.models.talleres import Taller
+from app.models.talleres import Tecnico
 
 from app.services.auth_service import (
     hash_password, verify_password, create_access_token , get_permisos_usuario, registrar_bitacora
@@ -16,6 +18,7 @@ from app.services.auth_service import (
 
 from datetime import datetime
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import or_
 
 router = APIRouter(prefix="/auth", tags=["Autenticación - CU01 al CU04"])
 
@@ -91,51 +94,126 @@ def registrar_usuario(datos: UsuarioCreate,request : Request ,db: Session = Depe
 
 @router.post("/login", response_model=Token)
 def login(datos: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    usuario = db.query(Usuario).filter(Usuario.email == datos.email).first()
-    if not usuario or not verify_password(datos.password, usuario.password):
-        raise HTTPException(status_code=401, detail="Email o password incorrectos")
-    if not usuario.estado:
-        raise HTTPException(status_code=403, detail="Usuario inactivo")
-    if usuario.id_rol == 4:
-        user_agent = request.headers.get("user-agent", "").lower()
-        if "flutter" in user_agent or "dart" in user_agent:
-            pass  # Permitir acceso desde Flutter
-        else:
-            raise HTTPException(status_code=403, detail="Usuario no autorizado entrar desde el movil")
-    permisos = get_permisos_usuario(db,usuario.id_rol)
-    token = create_access_token({"sub": str(usuario.codigo), "rol": usuario.id_rol , "permisos": permisos})
-    id_taller_bitacora = None
-    accion_bitacora = "LOGIN_USUARIO"
-    modulo_bitacora = "USUARIOS"
+    identificador = datos.identificador.strip()
 
-    if usuario.id_rol == 1:
-        accion_bitacora = "LOGIN_ADMIN_PLATAFORMA"
+    # 1. Buscar primero en USUARIO
+    usuario = db.query(Usuario).filter(
+        or_(
+            Usuario.email == identificador,
+            Usuario.codigo == identificador
+        )
+    ).first()
+
+    if usuario:
+        if not verify_password(datos.password, usuario.password):
+            raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+
+        if not usuario.estado:
+            raise HTTPException(status_code=403, detail="Usuario inactivo")
+
+        if usuario.id_rol == 4:
+            user_agent = request.headers.get("user-agent", "").lower()
+            if "flutter" not in user_agent and "dart" not in user_agent:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Usuario no autorizado entrar desde el móvil"
+                )
+
+        permisos = get_permisos_usuario(db, usuario.id_rol)
+
+        token = create_access_token({
+            "sub": str(usuario.codigo),
+            "rol": usuario.id_rol,
+            "tipo": "usuario",
+            "permisos": permisos
+        })
+
+        id_taller = None
+        accion_bitacora = "LOGIN_USUARIO"
         modulo_bitacora = "USUARIOS"
 
-    elif usuario.id_rol == 2:
-        accion_bitacora = "LOGIN_ADMIN_TALLER"
-        modulo_bitacora = "TALLERES"
-    elif usuario.id_rol == 4:
-        accion_bitacora = "LOGIN_CLIENTE"
-        modulo_bitacora = "CLIENTES"
-    print(Taller.__table__.columns.keys())
-    taller = db.query(Taller).filter(Taller.usuario_id == usuario.codigo).first()
-    if taller:
-        id_taller_bitacora = taller.codigo
+        if usuario.id_rol == 1:
+            accion_bitacora = "LOGIN_ADMIN_PLATAFORMA"
+            modulo_bitacora = "USUARIOS"
 
-    registrar_bitacora(
-    db=db,
-    codigo_usuario=usuario.codigo,
-    accion=accion_bitacora,
-    modulo=modulo_bitacora,
-    descripcion=f"Inicio de sesión del usuario {usuario.codigo}",
-    ip_address=request.client.host if request.client else None,
-    id_taller=id_taller_bitacora
-    )
-    return {"access_token": token, "token_type": "bearer", "usuario": build_usuario_response(usuario, db)}
+        elif usuario.id_rol == 2:
+            accion_bitacora = "LOGIN_ADMIN_TALLER"
+            modulo_bitacora = "TALLERES"
 
+            taller = db.query(Taller).filter(Taller.usuario_id == usuario.codigo).first()
+            if taller:
+                id_taller = taller.codigo
 
+        elif usuario.id_rol == 4:
+            accion_bitacora = "LOGIN_CLIENTE"
+            modulo_bitacora = "CLIENTES"
 
+        registrar_bitacora(
+            db=db,
+            codigo_usuario=usuario.codigo,
+            codigo_tecnico=None,
+            id_taller=id_taller,
+            accion=accion_bitacora,
+            modulo=modulo_bitacora,
+            descripcion=f"Inicio de sesión del usuario {usuario.codigo}",
+            ip_address=request.client.host if request.client else None
+        )
+        db.commit()
+
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "usuario": build_usuario_response(usuario, db),
+            "id_taller": id_taller
+        }
+
+    # 2. Si no existe en usuario, buscar en TECNICO
+    tecnico = db.query(Tecnico).filter(Tecnico.codigo == identificador).first()
+
+    if tecnico:
+        if not verify_password(datos.password, tecnico.password):
+            raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+
+        token = create_access_token({
+            "sub": tecnico.codigo,
+            "rol": tecnico.id_rol,
+            "tipo": "tecnico",
+            "permisos": []
+        })
+
+        registrar_bitacora(
+            db=db,
+            codigo_usuario=None,
+            codigo_tecnico=tecnico.codigo,
+            id_taller=tecnico.id_taller,
+            accion="LOGIN_TECNICO",
+            modulo="TECNICOS",
+            descripcion=f"Inicio de sesión del técnico {tecnico.codigo}",
+            ip_address=request.client.host if request.client else None
+        )
+        db.commit()
+
+        # IMPORTANTE:
+        # devolvemos "usuario" normalizado para que el front no cambie mucho
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "usuario": {
+                "codigo": tecnico.codigo,
+                "nombre": tecnico.nombre,
+                "apellido": "",
+                "email": f"{tecnico.codigo}@gmail.com",
+                "telefono": tecnico.telefono,
+                "fecha_registro": datetime.now(), 
+                "id_rol": tecnico.id_rol,
+                "estado": True,
+                "nombre_rol": "TÉCNICO",
+                "permisos": []
+            },
+            "id_taller": tecnico.id_taller
+        }
+
+    raise HTTPException(status_code=401, detail="Credenciales incorrectas")
 
 
 # CU-03 Recuperar contraseña
